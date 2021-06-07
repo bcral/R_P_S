@@ -16,12 +16,14 @@ contract Data {
     // If contract is currently paused or not
     bool pauseStatus;
     // Currently set to the deployer address at migration
-    address owner;
-    // Shows if first move is made
-    bool firstMove;
-    // Shows if second move is made
-    bool secondMove;
+    address private owner;
+    // The Logic contract's address
+    // Set to single address instead of array - one logic contract at a time
+    address public authLogic;
+    // Boolean for setting/checking if a game is currently open
+    bool public openGame;
     // Mapping for storing winnings
+    // Possibility for future expansion - Use this store of funds for betting
     mapping(address => uint256) private winnings;
 
     constructor() 
@@ -31,8 +33,7 @@ contract Data {
         bonusPool = 0;
         pauseStatus = false;
         owner = msg.sender;
-        firstMove = false;
-        secondMove = false;
+        openGame = false;
         }
 
     ////////////////////////////////// Modifiers ////////////////////////////////
@@ -44,25 +45,25 @@ contract Data {
         _;
     }
 
+    // Checks that the sender is the approved logic file
+    modifier requireAuthLogic() {
+        require(msg.sender == authLogic, "You're not the Logic for this Data.");
+        _;
+    }
+
     modifier requireUnpaused() {
         require(pauseStatus == false, "Contract is paused");
         _;
     }
 
     modifier requireMoney(uint256 amnt) {
-        require(amnt >= 1 ether, "Are you going to pay for that?  Min. is 1 ETH");
+        require(amnt == 1 ether, "Are you going to pay for that?  Min. is 1 ETH");
         _;
     }
 
-    modifier requireComplete() {
-        require( (firstMove && secondMove) , "Game must be complete to call this");
+    modifier requireWinnings(address _address) {
+        require(winnings[_address] > 0, "You don't have any winnings stored here.");
         _;
-    }
-
-    modifier resetGame() {
-        _;
-        firstMove = false;
-        secondMove = false;
     }
 
     ////////////////////////////////// Utilities ////////////////////////////////
@@ -70,7 +71,7 @@ contract Data {
     // Checks if contract is paused
     function isPaused() 
         public 
-        view 
+        view
         returns(bool) 
         {
             return pauseStatus;
@@ -84,8 +85,16 @@ contract Data {
             pauseStatus = status;
         }
 
-    // Adds funds to the bonus pool, in case they somehow run dry
-    // INCLUDE TRANSACTION
+    // Pauses/unpauses the contract - Set to only be modified by deployer
+    function setAuthLogic(address newLogicContract)
+        external
+        requireOwner 
+        {
+            authLogic = newLogicContract;
+        }
+
+    // Adds funds to the bonus pool, in case they somehow run dry, and someone wants
+    // to top it off to insentivise players
     function addFunds() 
         external
         payable
@@ -94,10 +103,45 @@ contract Data {
             bonusPool.add(msg.value);
         }
 
+    function getOwner()
+        external
+        view
+        returns(address)
+        {
+            return owner;
+        }
+
+    // Getter function for testing the connection between contracts
+    function getAuthLogic()
+        external
+        view
+        requireOwner
+        returns(address)
+        {
+            return authLogic;
+        }
+
+    // Checks if there is currently a game open(first move played) or not
+    function isOpen() 
+        external
+        view
+        returns(bool) 
+        {
+            return openGame;
+        }
+
     // Getter that returns contract balance
     function getBalance()
         external
         view
+        returns(uint256)
+        {
+            return balance;
+        }
+
+    // For checking contract balance in testing
+    function dataBalance()
+        external
         returns(uint256)
         {
             return address(this).balance;
@@ -112,85 +156,74 @@ contract Data {
             return bonusPool;
         }
 
-    function checkMove()
-        external
-        view
-        returns(bool)
-        {
-            return firstMove;
-        }
-
     ///////////////////////////////// Functionality ///////////////////////////////
 
-    function setBet()
+    // Sets the status of the game - if true, first move was played.  If false,
+    // there is currently not an open game, because the playing of the second move
+    // resolved the game
+    function setGame(bool game) 
+        external
+        requireAuthLogic
+        requireUnpaused
+        {
+            openGame = game;
+        }
+    
+    function addToBonus(uint256 bonus)
+        external
+        requireAuthLogic
+        requireUnpaused
+        {
+            // Subtract the value to be added to bonusPool from balance
+            balance = balance.sub(bonus);
+            // Add value to bonusPool
+            bonusPool = bonusPool.add(bonus);
+        }
+
+    function bonusPayout(uint256 payout)
+        external
+        requireAuthLogic
+        requireUnpaused
+        {
+            // Subtract value that was paid out to winnings from the bonusPool
+            bonusPool = bonusPool.sub(payout);
+        }
+
+    function addWinnings(address winner, uint256 winning)
+        external
+        requireAuthLogic
+        requireUnpaused
+        {
+            // Subtract the winning amount from balance
+            balance = balance.sub(winning);
+            // Credit winner's account with winning amount
+            winnings[winner] = winnings[winner].add(winning);
+        }
+    
+    function fund()
         external
         payable
+        requireAuthLogic
         requireUnpaused
-        requireMoney(msg.value)
         {
-            // increase balance by incoming amount
-            balance += msg.value;
-            // set move depending on where the current status is
-            if (firstMove) {
-                move2();
-            } else if (!firstMove) {
-                move1();
-            }
+            balance = balance.add(msg.value);
         }
 
-    function move1()
-        private
+    function checkWinnings(address _address)
+        public
         requireUnpaused
+        requireWinnings(_address)
+        returns(uint256)
         {
-            firstMove = true;
+            return winnings[_address];
         }
 
-    function move2()
-        private
+    function withdraw(address _address)
+        public
         requireUnpaused
+        requireWinnings(_address)
         {
-            secondMove = true;
-        }
 
-    function win(address _address)
-        external
-        requireUnpaused
-        requireComplete
-        resetGame
-        {
-            // Credit current balance to winner DO NOT transfer
-            winnings[_address].add(balance);
-            // If bonus is available, add that as well
-            if (bonusPool >= 1 ether) {
-                // Sets bonus payout to 25% of bonus pool
-                uint256 bonusPlaceholder = bonusPool;
-                bonusPool = 0;
-                uint256 bonusPayout = bonusPlaceholder.div(4);
-                // Add bonus to the player's winnings
-                winnings[_address].add(bonusPayout);
-                // Set bonusPool to new value
-                bonusPool = bonusPlaceholder.sub(bonusPayout);
-            }
-        }
-
-    // Function for determining what happens with the funds if there is a draw
-    // 50% is returned to the players(split evenly), and 50% is added to the bonus pool
-    function draw(address _address1, address _address2)
-        external
-        requireUnpaused
-        requireComplete
-        resetGame
-        {
-            // Use SafeMath to devide balance in half
-            uint256 split = balance.div(2);
-            // Send half of the balance to bonusPool
-            balance = 0;
-            bonusPool.add(split);
-            // Split remaining half of balance in half again
-            uint256 payout = split.div(2);
-            // Credit half to each argument addresss
-            winnings[_address1].add(payout);
-            winnings[_address2].add(payout);
         }
 
     ///////////////////////////////// Fallback ///////////////////////////////

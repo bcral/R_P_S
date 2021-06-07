@@ -17,7 +17,7 @@ contract Logic {
     // scissors, etc.
 
     // Configure Data contract
-    Data data;
+    iData data;
     // Sets owner privilages
     address private owner;
 
@@ -26,24 +26,30 @@ contract Logic {
     address player2;
     uint8 play1;
     uint8 play2;
-    uint256 bet;
 
-    constructor(address dataContract) 
+    constructor(address payable dataContract) 
         public 
         {
         owner = msg.sender;
-        data = Data(dataContract);
+        data = iData(dataContract);
         }
 
     ////////////////////////////////// Modifiers ////////////////////////////////
 
+    // In case you need owner control for additional functionality
+    modifier requireOwner() {
+        require(msg.sender == owner);
+        _;
+    }
+
     modifier checkValue() {
-        require(msg.value == requiredBet());
+        require(msg.value == data.getBalance());
         _;
     }
 
     modifier requireMoney() {
-        require(msg.value >= 1 ether, "Are you going to pay for that?  Min. is 1 ETH");
+        // Should be able to change this amount to anything
+        require(msg.value == 1 ether, "Are you going to pay for that?  Required bet is 1 ETH");
         _;
     }
 
@@ -67,15 +73,6 @@ contract Logic {
             return data.isPaused();
         }
 
-    function requiredBet()
-        public
-        view
-        returns(uint256)
-        {
-            return data.getBalance();
-        }
-
-
     ////////////////////////////////// Functionality ////////////////////////////////
 
     function play(uint8 playerMove)
@@ -85,35 +82,42 @@ contract Logic {
         requireMoney
         checkPlay(playerMove)
         {
+            bool gameStatus = data.isOpen();
             // If there is a current game...
-            if (data.checkMove()) {
-                require(msg.value == bet);
+            if (gameStatus) {
                 player2 = msg.sender;
                 play2 = playerMove;
-                data.setBet(msg.value);
-                // Run function to check who on.
+                // Sends funds to Data contract for storage
+                data.fund.value(msg.value)();
+                // Resets game status to false
+                data.setGame(false);
+                // Run function to check who won.
                 checkWinner();
             // If there is NOT a current game...
             } else {
                 player1 = msg.sender;
                 play1 = playerMove;
-                bet = msg.value;
-                data.setBet(msg.value);
+                // Sets status of game in Data contract
+                data.setGame(true);
+                // Sends funds to Data contract for storage
+                data.fund.value(msg.value)();
             }
         }
 
     // How to test who won:
+    // Paper == 0, Rock == 1, Scissors == 2.
     // Increment one of the plays by 1.  If it then equals the same as the other
-    // person's play, then it wins(because each one beats the next in the cycle)
-    // If a winner still isn't found, increment the other person's play by one, and
-    // repeat the check.
+    // person's play, then it wins(because each one beats the next in the looping 
+    // cycle). If a winner still isn't found, increment the other person's play by 
+    // one, and repeat the check.
 
     function compare(uint8 a, uint8 b)
         private
+        requireUnpaused
         returns(bool)
         {
             // increment a by 1
-            a++;
+            a = a++;
             // if a + 1 = 3, then loop it around the cycle to be 0
             if (a >= 3) {
                 a = 0;
@@ -129,21 +133,68 @@ contract Logic {
 
     function checkWinner()
         private
+        requireUnpaused
         {
             if (play1 == play2) {
                 // it's a draw!
                 // return 50% of funds to both players
-                data.draw(player1, player2);
+                draw(player1, player2);
             }
             else if (compare(play1, play2)) {
                 // Player1 wins
-                data.win(player1);
+                win(player1);
             }
             else if (compare(play2, play1)) {
                 // Player2 wins
-                data.win(player2);
+                win(player2);
             }
             clear();
+        }
+
+    // Function for transferring funds to winner's 'winnings' mapping in Data contract
+    function win(address _address)
+        private
+        requireUnpaused
+        {
+            // Get current bet balance from Data contract
+            // Dont credit just yet - wait for bonus calculation.  This should
+            // reduce gas, but potentially introduce security risks
+            uint256 payout = data.getBalance();
+            // If bonus is available, add that as well
+            uint256 bonus = data.getBonusPool();
+
+            if (bonus >= 1 ether) {
+                // Sets bonus payout to 25% of bonus pool
+                uint256 bonusPlaceholder = bonus;
+                bonus = 0;
+                uint256 bonusPay = bonusPlaceholder.div(4);
+                // Set bonusPool in Data contract to new value
+                data.bonusPayout(bonusPay);
+                // Add bonus to the player's winnings
+                payout = payout.add(bonusPay);
+            }
+
+            // Credit current payout to winner
+            data.addWinnings(_address, payout);
+        }
+
+    // Function for determining what happens with the funds if there is a draw
+    // 50% is returned to the players(split evenly), and 50% is added to the bonus pool
+    function draw(address _address1, address _address2)
+        private
+        requireUnpaused
+        {
+            uint256 balance = data.getBalance();
+            // Use SafeMath to devide balance in half
+            uint256 split = balance.div(2);
+            // Send half of the balance to bonusPool
+            balance = 0;
+            data.addToBonus(split);
+            // Split remaining half of balance in half again
+            uint256 payout = split.div(2);
+            // Credit half to each argument addresss
+            data.addWinnings(_address1, payout);
+            data.addWinnings(_address2, payout);
         }
 
     function clear()
@@ -155,11 +206,14 @@ contract Logic {
     
 }
 
-contract Data {
-    function isPaused() public view returns(bool);
+contract iData {
+    function isPaused() external view returns(bool);
+    function isOpen() external view returns(bool);
+    function setGame(bool) external;
     function getBalance() external view returns(uint256);
-    function setBet(uint256) external;
-    function checkMove() external returns(bool);
-    function win(address) external;
-    function draw(address, address) external;
+    function getBonusPool() external view returns(uint256);
+    function fund() external payable;
+    function addWinnings(address, uint256) external;
+    function addToBonus(uint256) external;
+    function bonusPayout(uint256) external;
 }

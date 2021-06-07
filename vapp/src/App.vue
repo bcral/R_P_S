@@ -17,9 +17,7 @@ import { mapGetters } from 'vuex'
 export default {
   name: 'app',
   components: {
-    ComplexStorage,
-    TutorialToken,
-    SimpleStorage
+    Main,
   },
 
   computed: mapGetters('drizzle', ['isDrizzleInitialized'])
