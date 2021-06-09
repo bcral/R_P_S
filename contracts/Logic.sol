@@ -42,11 +42,6 @@ contract Logic {
         _;
     }
 
-    modifier checkValue() {
-        require(msg.value == data.getBalance());
-        _;
-    }
-
     modifier requireMoney() {
         // Should be able to change this amount to anything
         require(msg.value == 1 ether, "Are you going to pay for that?  Required bet is 1 ETH");
@@ -59,7 +54,7 @@ contract Logic {
     }
 
     modifier checkPlay(uint8 play) {
-        require((play >= 0) && (play <= 2));
+        require((play >= 0) && (play <= 2), "Invalid play - input must be 0 - 2");
         _;
     }
 
@@ -75,6 +70,7 @@ contract Logic {
 
     ////////////////////////////////// Functionality ////////////////////////////////
 
+    // Main function for initiating and completing a game
     function play(uint8 playerMove)
         public
         payable
@@ -114,23 +110,20 @@ contract Logic {
     function compare(uint8 a, uint8 b)
         private
         requireUnpaused
-        returns(bool)
+        returns(bool result)
         {
             // increment a by 1
-            a = a++;
+            a++;
             // if a + 1 = 3, then loop it around the cycle to be 0
-            if (a >= 3) {
+            if (a > 2) {
                 a = 0;
             }
-            // compare a to b.  If a = b, a is the winner - return true
-            if (a == b) {
-                return true;
-            // else return false - no winner is determined
-            } else {
-                return false;
-            }
+            // ternary for cleaning up the return syntax
+            return a == b ? true : false;
         }
 
+    // Check function for determining the winner and calling the function to allocate
+    // funds to the winner in the Data contract
     function checkWinner()
         private
         requireUnpaused
@@ -162,20 +155,19 @@ contract Logic {
             uint256 payout = data.getBalance();
             // If bonus is available, add that as well
             uint256 bonus = data.getBonusPool();
+            uint256 bonusPay;
 
             if (bonus >= 1 ether) {
                 // Sets bonus payout to 25% of bonus pool
                 uint256 bonusPlaceholder = bonus;
                 bonus = 0;
-                uint256 bonusPay = bonusPlaceholder.div(4);
+                bonusPay = bonusPlaceholder.div(4);
                 // Set bonusPool in Data contract to new value
                 data.bonusPayout(bonusPay);
-                // Add bonus to the player's winnings
-                payout = payout.add(bonusPay);
             }
 
             // Credit current payout to winner
-            data.addWinnings(_address, payout);
+            data.addWinnings(_address, payout, bonusPay);
         }
 
     // Function for determining what happens with the funds if there is a draw
@@ -193,13 +185,14 @@ contract Logic {
             // Split remaining half of balance in half again
             uint256 payout = split.div(2);
             // Credit half to each argument addresss
-            data.addWinnings(_address1, payout);
-            data.addWinnings(_address2, payout);
+            data.addWinnings(_address1, payout, 0);
+            data.addWinnings(_address2, payout, 0);
         }
 
     function clear()
         private
         {
+            // Reset addresses to defaults for safety
             player1 = address(0);
             player2 = address(0);
         }
@@ -213,7 +206,7 @@ contract iData {
     function getBalance() external view returns(uint256);
     function getBonusPool() external view returns(uint256);
     function fund() external payable;
-    function addWinnings(address, uint256) external;
+    function addWinnings(address, uint256, uint256) external;
     function addToBonus(uint256) external;
     function bonusPayout(uint256) external;
 }

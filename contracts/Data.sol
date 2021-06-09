@@ -24,7 +24,7 @@ contract Data {
     bool public openGame;
     // Mapping for storing winnings
     // Possibility for future expansion - Use this store of funds for betting
-    mapping(address => uint256) private winnings;
+    mapping(address => uint256) public winnings;
 
     constructor() 
         public 
@@ -189,15 +189,17 @@ contract Data {
             bonusPool = bonusPool.sub(payout);
         }
 
-    function addWinnings(address winner, uint256 winning)
+    function addWinnings(address winner, uint256 winning, uint256 bonus)
         external
         requireAuthLogic
         requireUnpaused
         {
             // Subtract the winning amount from balance
             balance = balance.sub(winning);
-            // Credit winner's account with winning amount
-            winnings[winner] = winnings[winner].add(winning);
+            // Add bonus to winnings to create total payout (if no bonus, 'bonus' will be 0)
+            uint256 total = winning.add(bonus);
+            // Credit winner's account address with total payout
+            winnings[winner] = winnings[winner].add(total);
         }
     
     function fund()
@@ -223,7 +225,7 @@ contract Data {
         requireUnpaused
         requireWinnings(_address)
         {
-
+            
         }
 
     ///////////////////////////////// Fallback ///////////////////////////////
