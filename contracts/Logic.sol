@@ -81,6 +81,9 @@ contract Logic {
             bool gameStatus = data.isOpen();
             // If there is a current game...
             if (gameStatus) {
+                // Prevent the same address from playing twice
+                require(msg.sender != player1, "The same player can't play twice in the same game.");
+                // Add new player's info
                 player2 = msg.sender;
                 play2 = playerMove;
                 // Sends funds to Data contract for storage
@@ -91,6 +94,7 @@ contract Logic {
                 checkWinner();
             // If there is NOT a current game...
             } else {
+                // Add player's info
                 player1 = msg.sender;
                 play1 = playerMove;
                 // Sets status of game in Data contract
@@ -109,6 +113,7 @@ contract Logic {
 
     function compare(uint8 a, uint8 b)
         private
+        view
         requireUnpaused
         returns(bool result)
         {

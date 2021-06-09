@@ -35,7 +35,7 @@ contract('Rock Paper Scissors tests', async (accounts) => {
 
     // Play first move - 1
     try {
-      await config.LogicInst.play(1, {from: config.testAddresses[0], gas: 9999999, value: eth1});
+      await config.LogicInst.play(1, {from: config.testAddresses[1], gas: 9999999, value: eth1});
     } catch(e) {console.log(e)}
 
     let result = await config.DataInst.getBalance.call();
@@ -48,7 +48,7 @@ contract('Rock Paper Scissors tests', async (accounts) => {
 
     // Play second move - also 1
     try {
-      await config.LogicInst.play(1, {from: config.testAddresses[1], gas: 9999999, value: eth1});
+      await config.LogicInst.play(1, {from: config.testAddresses[0], gas: 9999999, value: eth1});
     } catch(e) {console.log(e)}
 
     let result = await config.DataInst.getBonusPool.call();
@@ -57,7 +57,7 @@ contract('Rock Paper Scissors tests', async (accounts) => {
 
   });
 
-  it(`4. Contract is reset, and new game is played.`, async function () {
+  it(`4. Contract is reset, and new game is played - Player 1 wins.`, async function () {
 
     // Play third and fourth move - 1 and 2
     try {
@@ -107,6 +107,34 @@ contract('Rock Paper Scissors tests', async (accounts) => {
     assert.equal(result, ((eth1 * 2)), "Value stored in player's address's winnings");
 
   });
+
+  it(`8. Player withdraws winnings.  Winnings stored in contract should be 0.`, async function () {
+
+    // Withdraw address 0's winnings
+    try {
+      await config.DataInst.withdraw(config.testAddresses[0], {from: config.testAddresses[0]});
+    } catch(e) {console.log(e)}
+
+    let result = await config.DataInst.checkWinnings.call(config.testAddresses[0], {from: config.testAddresses[0]});
+
+    assert.equal(result, 0, "Checks player's winnings after they're withdrawn - should be 0");
+
+  });
+
+  // Un-comment this test to check for reversion when the same player tries to play
+  // twice.  Commented out because it forced a revert case.
+
+  // it(`9. Contract is reset, and new game is played - Player tries to play twice in same game.`, async function () {
+
+  //   // Send both moves from the same accress
+  //   try {
+  //     await config.LogicInst.play(1, {from: config.testAddresses[4], gas: 9999999, value: eth1});
+  //     await config.LogicInst.play(2, {from: config.testAddresses[4], gas: 9999999, value: eth1});
+  //   } catch(e) {console.log(e)}
+
+  //   assert.equal( "Call should revert because the same player tried to play twice");
+
+  // });
 
 
 });

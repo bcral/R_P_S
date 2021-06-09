@@ -142,6 +142,7 @@ contract Data {
     // For checking contract balance in testing
     function dataBalance()
         external
+        view
         returns(uint256)
         {
             return address(this).balance;
@@ -211,21 +212,25 @@ contract Data {
             balance = balance.add(msg.value);
         }
 
+    // Function that returns the argument address's winnings stored in the contract
+    // Returns 0 if none.
     function checkWinnings(address _address)
         public
+        view
         requireUnpaused
-        requireWinnings(_address)
         returns(uint256)
         {
             return winnings[_address];
         }
 
-    function withdraw(address _address)
+    function withdraw(address payable _address)
         public
         requireUnpaused
         requireWinnings(_address)
         {
-            
+            uint256 credit = winnings[_address];
+            winnings[_address] = 0;
+            _address.transfer(credit);
         }
 
     ///////////////////////////////// Fallback ///////////////////////////////
